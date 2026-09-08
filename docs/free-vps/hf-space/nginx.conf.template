@@ -1,0 +1,83 @@
+# Camofox auf HF Spaces — läuft als User 1000 (nicht root!), darum:
+# - keine Default-Pfade (/var/log, /run, /var/cache), alles unter /home/user/app/run
+# - keine `user`-Direktive (Master läuft bereits als User 1000)
+# ${NGINX_PORT} + ${CAMOFOX_ACCESS_KEY} werden beim Start via envsubst eingesetzt
+# (der Key ist 64-hex aus HF Secrets — keine Sonderzeichen, config-sicher).
+worker_processes 1;
+pid /home/user/app/run/nginx.pid;
+error_log /home/user/app/run/nginx-error.log warn;
+
+events {
+    worker_connections 128;
+}
+
+http {
+    access_log /home/user/app/run/nginx-access.log;
+    client_body_temp_path /home/user/app/run/tmp/client;
+    proxy_temp_path /home/user/app/run/tmp/proxy;
+    fastcgi_temp_path /home/user/app/run/tmp/fastcgi;
+    uwsgi_temp_path /home/user/app/run/tmp/uwsgi;
+    scgi_temp_path /home/user/app/run/tmp/scgi;
+
+    server {
+        listen ${NGINX_PORT};
+
+        # --- camofox REST-API: Auth macht camofox selbst (Bearer), /health ist offen ---
+        location / {
+            proxy_pass http://127.0.0.1:9377;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_buffering off;
+            proxy_read_timeout 300s;
+            proxy_send_timeout 300s;
+        }
+
+        # --- MCP Streamable HTTP (primär, für Operit): Bearer-Header ODER ?key= ---
+        location = /mcp {
+            set $mcp_ok 0;
+            if ($http_authorization = "Bearer ${CAMOFOX_ACCESS_KEY}") { set $mcp_ok 1; }
+            if ($arg_key = "${CAMOFOX_ACCESS_KEY}") { set $mcp_ok 1; }
+            if ($mcp_ok = 0) { return 401; }
+            proxy_pass http://127.0.0.1:8001;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_buffering off;
+            proxy_cache off;
+            chunked_transfer_encoding on;
+            proxy_read_timeout 300s;
+            proxy_send_timeout 300s;
+        }
+
+        # --- MCP SSE (Fallback, braucht Bearer-Header) ---
+        # ?key= geht hier NICHT: Der Client bekommt die /message-URL vom Server
+        # geschickt (ohne Query) — nur der Header überlebt den Roundtrip.
+        location = /sse {
+            set $mcp_ok 0;
+            if ($http_authorization = "Bearer ${CAMOFOX_ACCESS_KEY}") { set $mcp_ok 1; }
+            if ($mcp_ok = 0) { return 401; }
+            proxy_pass http://127.0.0.1:8002;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header Connection '';
+            proxy_buffering off;
+            proxy_cache off;
+            chunked_transfer_encoding on;
+            proxy_read_timeout 86400s;
+            proxy_send_timeout 86400s;
+        }
+
+        location = /message {
+            set $mcp_ok 0;
+            if ($http_authorization = "Bearer ${CAMOFOX_ACCESS_KEY}") { set $mcp_ok 1; }
+            if ($mcp_ok = 0) { return 401; }
+            proxy_pass http://127.0.0.1:8002;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_buffering off;
+            proxy_read_timeout 300s;
+            proxy_send_timeout 300s;
+        }
+    }
+}
