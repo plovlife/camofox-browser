@@ -390,5 +390,40 @@ Gehirn bleibt OpenRouter (Denken), Space macht nur die Klicks
 - **Später:** echte Visa/Mastercard-Debit einer echten Bank (kein virtuell/prepaid) hat
   bei Oracle die besten Chancen — aber ohne Garantie, erst versuchen wenn's sich ergibt.
 
+### C.5 Update 08.09.2026 nachmittags: Docker braucht PRO — Gradio-Wrapper ist der neue Weg
+
+Der Nutzer hat am New-Space-Screen gemeldet: Docker-SDK nur mit PRO wählbar. Verifiziert —
+offizielle Doku: „Gradio and Docker Spaces run on compute and require a paid plan to create:
+PRO for personal accounts" — gratis bleiben Static (unbegrenzt) und **bis zu 2 Gradio-Spaces
+auf ZeroGPU** für Konten „in good standing":
+[Spaces-Overview](https://huggingface.co/docs/hub/en/spaces-overview),
+[Spaces-Launch](https://huggingface.co/spaces/launch),
+[Pricing](https://huggingface.co/pricing) (PRO $9/Monat: „Host your own ZeroGPU, Gradio & Docker Spaces").
+ZeroGPU-Details: Gradio-only, GPU-Zuteilung nur während aktiver Inferenz (idle kostet nichts),
+Free: 5 GPU-Min/Tag + 2 Spaces ([aiweekly 31.08.2026](https://aiweekly.co/learning-ai/machine-learning/how-to-use-hugging-face)).
+Unsere App ruft nie GPU auf → 0 Min Verbrauch; der Space läuft als normaler CPU-Container
+(2 vCPU/16 GB). Präzedenz für Non-Gradio-Apps auf Gradio-SDK: n8n-Tutorial ([tomo.dev](https://tomo.dev/en/posts/deploy-n8n-for-free-using-huggingface-space/)).
+
+**Neue Umsetzung: `docs/free-vps/hf-space/gradio/`** (Docker-Variante in `hf-space/` bleibt
+für PRO-Nutzer gültig):
+- Space braucht 3 Paste-Dateien: `app.py` (30-Zeilen-Bootstrap: lädt Branch-ZIP, entpackt,
+  exekutiert Launcher aus dem Repo = Single Source of Truth), `packages.txt` (apt-Libs +
+  Fonts + build-essential, als root zur Build-Zeit — Feature verifiziert:
+  [hub-docs spaces-dependencies](https://github.com/huggingface/hub-docs/blob/main/docs/hub/spaces-dependencies.md)),
+  `README.md` (`sdk: gradio`). Kein `requirements.txt` nötig (nur Stdlib).
+- `launcher.py` (repo-seitig, jederzeit fixbar ohne Re-Paste): lädt Node-v22.22.3-Tarball,
+  `npm ci` (postinstall holt dabei den Lib-kompatiblen Browser; Fallback: `--ignore-scripts` +
+  pinned Direkt-Download v135.0.1-beta.24 ohne GitHub-API), installiert `supergateway@3`
+  nach `~/.local`, startet REST (127.0.0.1:9377, wartet auf /health), Bridges (:8001
+  streamable `--stateful`, :8002 SSE nur mit `PUBLIC_BASE_URL`), exekutiert `proxy.mjs`.
+- `proxy.mjs` (null Deps): eine Tür (`APP_PORT`, Default 7860 — nie `$PORT`!),
+  `/` → 9377, `/mcp` → 8001 (Bearer ODER `?key=`), `/sse`+`/message` → 8002 (nur Bearer,
+  kein Upstream-Timeout auf `/sse`). Funktional in der Sandbox getestet (401-Fälle,
+  Weiterleitung inkl. Body/Query, `/health`-Passthrough).
+- Code-Fakten: xvfb optional (server.js fällt auf headless zurück), better-sqlite3 wird
+  von server.js/lib nirgends importiert (npm-Fallback ungefährlich).
+- ANLEITUNG.md auf Gradio umgeschrieben (3 Dateien, ZeroGPU-Hinweis, längere Zeiten:
+  Build 10–20 Min + Erststart 5–10 Min, Sleep-Wake 5–10 Min).
+
 
 

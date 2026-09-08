@@ -42,3 +42,6 @@ fly.toml
 # Test artifacts
 test-results/
 playwright-report/
+
+# Python-Bytecode (u.a. aus hf-space/gradio-Checks)
+__pycache__/
